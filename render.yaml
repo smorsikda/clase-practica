@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: pokemondemo
+    runtime: docker
+    plan: free
+    branch: poke
+    dockerfilePath: ./dockerfile
+    dockerContext: .
+    healthCheckPath: /
