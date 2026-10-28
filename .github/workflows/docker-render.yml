@@ -1,0 +1,78 @@
+name: CI/CD Docker -> GHCR -> Render
+
+on:
+  push:
+    branches: [main, DOCKERCICD, poke]
+  pull_request:
+    branches: [main, DOCKERCICD, poke]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-test-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v4
+
+      - name: Construir la imagen
+        run: docker build -f dockerfile -t pokemondemo:test .
+
+      - name: Probar el contenedor
+        run: |
+          docker run -d --name app -p 8080:80 pokemondemo:test
+          sleep 3
+          curl -sf http://localhost:8080 | grep -q "PokéAPI"
+          echo "✅ La app responde y contiene 'PokéAPI'"
+
+      - name: Mostrar logs si falla
+        if: failure()
+        run: docker logs app
+
+      - name: Iniciar sesión en GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Calcular etiquetas
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest
+            type=sha
+
+      - name: Publicar imagen en GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  deploy-render:
+    needs: build-test-push
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Activar despliegue en Render
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "Falta configurar el secreto RENDER_DEPLOY_HOOK_URL en GitHub Actions." >&2
+            exit 1
+          fi
+          curl --fail-with-body --silent --show-error --request POST "$RENDER_DEPLOY_HOOK_URL"

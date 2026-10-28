@@ -1,9 +1,11 @@
 services:
   - type: web
-    name: pokemondemo
-    runtime: docker
+    name: clase-practica
+    runtime: image
     plan: free
-    branch: poke
-    dockerfilePath: ./dockerfile
-    dockerContext: .
+    image:
+      url: ghcr.io/smorsikda/clase-practica:latest
+      creds:
+        fromRegistryCreds:
+          name: ghcr-clase-practica
     healthCheckPath: /
